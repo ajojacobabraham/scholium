@@ -252,9 +252,12 @@ export default function LedgerPage() {
                   year:  "numeric",
                 }).format(dateObj);
 
+                const durationHours   = entry.durationHours   ?? entry.effortScore;
+                const effortRemainder = entry.effortRemainder ?? 0;
+
                 return (
                   <React.Fragment key={entry.id}>
-                    {/* Debit row */}
+                    {/* Debit row 1 — Time */}
                     <TableRow className="border-b-0 hover:bg-transparent">
                       <TableCell className="align-top font-medium text-slate-600 text-sm">
                         {dateStr}
@@ -263,17 +266,32 @@ export default function LedgerPage() {
                         {entry.notes || "—"}
                       </TableCell>
                       <TableCell className="text-slate-700 font-medium text-sm">
-                        {getAccountName(entry.debitAccount)}
+                        Time
                       </TableCell>
                       <TableCell className="text-right font-mono text-slate-800 text-sm">
-                        {entry.effortScore.toFixed(2)}
+                        {durationHours.toFixed(2)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-slate-300 text-sm">
                         —
                       </TableCell>
                     </TableRow>
 
-                    {/* Credit row */}
+                    {/* Debit row 2 — Effort */}
+                    <TableRow className="border-b-0 hover:bg-transparent">
+                      <TableCell />
+                      <TableCell />
+                      <TableCell className="text-slate-700 font-medium text-sm">
+                        Effort
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-slate-800 text-sm">
+                        {effortRemainder.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-slate-300 text-sm">
+                        —
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Credit row — Knowledge / Goal account */}
                     <TableRow className="bg-slate-50/40">
                       <TableCell />
                       <TableCell />

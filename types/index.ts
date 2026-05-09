@@ -71,10 +71,13 @@ export interface LedgerEntry {
   userId:          string;
   sessionId:       string;
   date:            Timestamp;
-  debitAccount:    "timeAndEffort";      // always the same per the spec
-  creditAccountId: string;
-  effortScore:     number;
-  notes:           string;
+  debitTimeAccount:   "time";            // debited with duration in hours
+  debitEffortAccount: "effort";          // debited with effortScore minus hours
+  creditAccountId:    string;            // knowledge or goal account
+  durationHours:      number;            // actual hours (debit to Time)
+  effortRemainder:    number;            // effortScore - durationHours (debit to Effort)
+  effortScore:        number;            // total = durationHours + effortRemainder
+  notes:              string;
 }
 
 // ─────────────────────────────────────────────

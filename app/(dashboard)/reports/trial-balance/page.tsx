@@ -17,38 +17,34 @@ export default function TrialBalancePage() {
   useEffect(() => { if (user) fetchEntries(user.uid); }, [user, fetchEntries]);
 
   const { rows, totalDebits, totalCredits, isBalanced } = useMemo(() => {
-    // Aggregate debits and credits per account
-    const debits:  Record<string, number> = {};
+    const debits:  Record<string, number> = { time: 0, effort: 0 };
     const credits: Record<string, number> = {};
 
     entries.forEach((e) => {
-      // Debit: Time & Effort account
-      debits["timeAndEffort"] = (debits["timeAndEffort"] ?? 0) + e.effortScore;
-      // Credit: Knowledge/Goal account
+      // Legacy entries used effortScore on a single debitAccount field
+      const durationHours   = e.durationHours   ?? e.effortScore;
+      const effortRemainder = e.effortRemainder ?? 0;
+
+      debits["time"]   += durationHours;
+      debits["effort"] += effortRemainder;
       credits[e.creditAccountId] = (credits[e.creditAccountId] ?? 0) + e.effortScore;
     });
 
-    // Build rows: one for Time & Effort + one per credited account
-    const allIds = new Set([
-      "timeAndEffort",
-      ...Object.keys(credits),
-    ]);
+    const debitRows = [
+      { id: "time",   name: "Time",   debit: parseFloat(debits["time"].toFixed(2)),   credit: 0 },
+      { id: "effort", name: "Effort", debit: parseFloat(debits["effort"].toFixed(2)), credit: 0 },
+    ];
 
-    const rows = Array.from(allIds).map((id) => {
-      const name =
-        id === "timeAndEffort"
-          ? "Time & Effort"
-          : (accounts.find((a) => a.id === id)?.name ?? "Unknown");
-      return {
-        id,
-        name,
-        debit:  parseFloat((debits[id]  ?? 0).toFixed(2)),
-        credit: parseFloat((credits[id] ?? 0).toFixed(2)),
-      };
-    });
+    const creditRows = Object.entries(credits).map(([id, amount]) => ({
+      id,
+      name:   accounts.find((a) => a.id === id)?.name ?? "Unknown",
+      debit:  0,
+      credit: parseFloat(amount.toFixed(2)),
+    }));
 
-    const totalDebits  = rows.reduce((s, r) => s + r.debit,  0);
-    const totalCredits = rows.reduce((s, r) => s + r.credit, 0);
+    const rows = [...debitRows, ...creditRows];
+    const totalDebits  = debitRows.reduce((s, r) => s + r.debit,   0);
+    const totalCredits = creditRows.reduce((s, r) => s + r.credit, 0);
     const isBalanced   = Math.abs(totalDebits - totalCredits) < 0.001;
 
     return { rows, totalDebits, totalCredits, isBalanced };

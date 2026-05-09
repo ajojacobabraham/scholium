@@ -38,16 +38,22 @@ export async function createSessionTransaction(
     createdAt: serverTimestamp(),
   });
 
-  // 2. Create the Ledger Entry
+  // 2. Create the Ledger Entry (split debit: Time + Effort)
+  const durationHours   = parseFloat((totalMinutes / 60).toFixed(4));
+  const effortRemainder = parseFloat((effortScore - durationHours).toFixed(2));
+
   const ledgerRef = doc(collection(db, "ledgerEntries"));
   batch.set(ledgerRef, {
     userId,
-    sessionId: sessionRef.id,
-    date: input.date,
-    debitAccount: "timeAndEffort",
-    creditAccountId: input.accountId,
+    sessionId:          sessionRef.id,
+    date:               input.date,
+    debitTimeAccount:   "time",
+    debitEffortAccount: "effort",
+    creditAccountId:    input.accountId,
+    durationHours,
+    effortRemainder,
     effortScore,
-    notes: input.notes,
+    notes:              input.notes,
   });
 
   // 3. Update all affected accounts
