@@ -1,6 +1,17 @@
-import { collection, doc, writeBatch, serverTimestamp, increment } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  writeBatch,
+  serverTimestamp,
+  increment,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+} from "firebase/firestore";
 import { db } from "./config";
-import type { CreateSessionInput } from "@/types";
+import type { CreateSessionInput, Session } from "@/types";
 import { calculateEffortScore } from "../calculations/effort";
 
 export async function createSessionTransaction(
@@ -9,7 +20,7 @@ export async function createSessionTransaction(
   affectedAccountIds: string[]
 ) {
   const batch = writeBatch(db);
-  
+
   const totalMinutes = input.durationHours * 60 + input.durationMinutes;
   const effortScore = calculateEffortScore(totalMinutes, input.difficulty, input.focus);
 
@@ -39,13 +50,26 @@ export async function createSessionTransaction(
     notes: input.notes,
   });
 
-  // 3. Update all affected accounts (Primary, Linked, and Parents)
+  // 3. Update all affected accounts
   affectedAccountIds.forEach((id) => {
     const accRef = doc(db, "accounts", id);
-    batch.update(accRef, {
-      totalEffortScore: increment(effortScore),
-    });
+    batch.update(accRef, { totalEffortScore: increment(effortScore) });
   });
 
   await batch.commit();
+}
+
+// Fetch recent sessions for a specific account
+export async function fetchSessionsForAccount(
+  accountId: string,
+  limitCount = 5
+): Promise<Session[]> {
+  const q = query(
+    collection(db, "sessions"),
+    where("accountId", "==", accountId),
+    orderBy("date", "desc"),
+    limit(limitCount)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Session));
 }
