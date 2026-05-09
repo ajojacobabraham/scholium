@@ -39,4 +39,4 @@ export default function TrialBalanceSummary({ entries }: Props) {
       </div>
     </div>
   );
-}
+}   
