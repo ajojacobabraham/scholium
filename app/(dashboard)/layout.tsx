@@ -11,6 +11,7 @@ import {
   PenLine,
   ScrollText,
   BarChart2,
+  Clock,
   LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,11 +19,12 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/dashboard",   label: "Dashboard",  icon: LayoutDashboard },
-  { href: "/accounts",    label: "Accounts",   icon: BookOpen        },
-  { href: "/sessions/new",label: "Log Session",icon: PenLine         },
-  { href: "/ledger",      label: "Ledger",     icon: ScrollText      },
-  { href: "/reports",     label: "Reports",    icon: BarChart2       },
+  { href: "/dashboard",    label: "Dashboard",  icon: LayoutDashboard },
+  { href: "/accounts",     label: "Accounts",   icon: BookOpen        },
+  { href: "/sessions/new", label: "Log Session",icon: PenLine         },
+  { href: "/sessions",     label: "Sessions",   icon: Clock           },
+  { href: "/ledger",       label: "Ledger",     icon: ScrollText      },
+  { href: "/reports",      label: "Reports",    icon: BarChart2       },
 ];
 
 export default function DashboardLayout({
@@ -54,7 +56,9 @@ export default function DashboardLayout({
 
   // Highlight "Reports" for any /reports/* route
   function isActive(href: string) {
-    if (href === "/reports") return pathname.startsWith("/reports");
+    if (href === "/reports")      return pathname.startsWith("/reports");
+    if (href === "/sessions")     return pathname === "/sessions";
+    if (href === "/sessions/new") return pathname === "/sessions/new";
     return pathname === href;
   }
 

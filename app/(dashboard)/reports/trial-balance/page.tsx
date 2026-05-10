@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { ChevronLeft, CheckCircle2, XCircle } from "lucide-react";
+import { useReactToPrint } from "react-to-print";
+import { ChevronLeft, CheckCircle2, XCircle, FileDown, Printer } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { useAccountStore } from "@/store/accountStore";
 import { useLedgerStore } from "@/store/ledgerStore";
+import { Button } from "@/components/ui/button";
+import { exportToCSV } from "@/lib/utils/export";
+import PrintableTrialBalance from "@/components/reports/PrintableTrialBalance";
 import { cn } from "@/lib/utils";
 
 export default function TrialBalancePage() {
@@ -14,6 +18,8 @@ export default function TrialBalancePage() {
   const entries      = useLedgerStore((s) => s.entries);
   const fetchEntries = useLedgerStore((s) => s.fetchEntries);
 
+  const printRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { if (user) fetchEntries(user.uid); }, [user, fetchEntries]);
 
   const { rows, totalDebits, totalCredits, isBalanced } = useMemo(() => {
@@ -21,10 +27,8 @@ export default function TrialBalancePage() {
     const credits: Record<string, number> = {};
 
     entries.forEach((e) => {
-      // Legacy entries used effortScore on a single debitAccount field
       const durationHours   = e.durationHours   ?? e.effortScore;
       const effortRemainder = e.effortRemainder ?? 0;
-
       debits["time"]   += durationHours;
       debits["effort"] += effortRemainder;
       credits[e.creditAccountId] = (credits[e.creditAccountId] ?? 0) + e.effortScore;
@@ -42,7 +46,7 @@ export default function TrialBalancePage() {
       credit: parseFloat(amount.toFixed(2)),
     }));
 
-    const rows = [...debitRows, ...creditRows];
+    const rows         = [...debitRows, ...creditRows];
     const totalDebits  = debitRows.reduce((s, r) => s + r.debit,   0);
     const totalCredits = creditRows.reduce((s, r) => s + r.credit, 0);
     const isBalanced   = Math.abs(totalDebits - totalCredits) < 0.001;
@@ -50,33 +54,69 @@ export default function TrialBalancePage() {
     return { rows, totalDebits, totalCredits, isBalanced };
   }, [entries, accounts]);
 
+  // ── PDF export ──────────────────────────────────────────────────────────────
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: `Scholium_TrialBalance_${new Date().toISOString().slice(0, 10)}`,
+  });
+
+  // ── CSV export ──────────────────────────────────────────────────────────────
+  function handleCSV() {
+    const csvRows = rows.map((r) => ({
+      Account: r.name,
+      Debit:   r.debit  > 0 ? r.debit  : "",
+      Credit:  r.credit > 0 ? r.credit : "",
+    }));
+    csvRows.push({
+      Account: "Total",
+      Debit:   totalDebits,
+      Credit:  totalCredits,
+    });
+    exportToCSV(csvRows, `Scholium_TrialBalance_${new Date().toISOString().slice(0, 10)}`);
+  }
+
+  const generatedAt = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "long", timeStyle: "short",
+  }).format(new Date());
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/reports" className="text-slate-400 hover:text-slate-600">
-          <ChevronLeft className="w-5 h-5" />
-        </Link>
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Trial Balance</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Full debit and credit summary across all accounts.
-          </p>
+      {/* Page header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <Link href="/reports" className="text-slate-400 hover:text-slate-600">
+            <ChevronLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Trial Balance</h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Full debit and credit summary across all accounts.
+            </p>
+          </div>
+        </div>
+
+        {/* Export buttons */}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleCSV} className="gap-2">
+            <FileDown className="w-4 h-4" />
+            Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
+            <Printer className="w-4 h-4" />
+            Export PDF
+          </Button>
         </div>
       </div>
 
       {/* Balance status */}
       <div className={cn(
         "flex items-center justify-between p-4 rounded-xl border",
-        isBalanced
-          ? "bg-emerald-50 border-emerald-200"
-          : "bg-red-50 border-red-200"
+        isBalanced ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"
       )}>
         <div className="flex items-center gap-2">
-          {isBalanced ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-          ) : (
-            <XCircle className="w-5 h-5 text-red-500" />
-          )}
+          {isBalanced
+            ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            : <XCircle      className="w-5 h-5 text-red-500" />}
           <span className={cn(
             "font-semibold text-sm",
             isBalanced ? "text-emerald-700" : "text-red-600"
@@ -96,12 +136,12 @@ export default function TrialBalancePage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* On-screen table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="text-left px-5 py-3 font-medium text-slate-500">Account</th>
+              <th className="text-left  px-5 py-3 font-medium text-slate-500">Account</th>
               <th className="text-right px-5 py-3 font-medium text-slate-500">Debit</th>
               <th className="text-right px-5 py-3 font-medium text-slate-500">Credit</th>
             </tr>
@@ -118,7 +158,7 @@ export default function TrialBalancePage() {
                 <tr key={row.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-800">{row.name}</td>
                   <td className="px-5 py-3 text-right font-mono text-slate-700">
-                    {row.debit > 0 ? row.debit.toFixed(2) : "—"}
+                    {row.debit  > 0 ? row.debit.toFixed(2)  : "—"}
                   </td>
                   <td className="px-5 py-3 text-right font-mono text-slate-700">
                     {row.credit > 0 ? row.credit.toFixed(2) : "—"}
@@ -135,6 +175,18 @@ export default function TrialBalancePage() {
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      {/* Hidden printable version */}
+      <div className="hidden">
+        <PrintableTrialBalance
+          ref={printRef}
+          rows={rows}
+          totalDebits={totalDebits}
+          totalCredits={totalCredits}
+          isBalanced={isBalanced}
+          generatedAt={generatedAt}
+        />
       </div>
     </div>
   );

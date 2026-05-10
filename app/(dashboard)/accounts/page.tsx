@@ -3,12 +3,12 @@
 import { useState, useMemo } from "react";
 import { useAccountStore } from "@/store/accountStore";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Plus, ChevronRight, ChevronDown, BookOpen, Target } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { Account, AccountTreeNode } from "@/types";
+import { BookOpen, Plus } from "lucide-react";
+import type { Account } from "@/types";
 import CreateAccountModal from "@/components/accounts/CreateAccountModal";
 import AccountDetailPanel from "@/components/accounts/AccountDetailPanel";
+import AccountTreeItem    from "@/components/accounts/AccountTreeItem";
+import { cn } from "@/lib/utils";
 
 export default function AccountsPage() {
   const accounts       = useAccountStore((s) => s.accounts);
@@ -17,13 +17,27 @@ export default function AccountsPage() {
 
   const tree = useMemo(() => getAccountTree(), [accounts, getAccountTree]);
 
-  const [modalOpen,      setModalOpen]      = useState(false);
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const [modalOpen,        setModalOpen]        = useState(false);
+  const [defaultParentId,  setDefaultParentId]  = useState<string | undefined>();
+  const [selectedAccount,  setSelectedAccount]  = useState<Account | null>(null);
+
+  function openModalWithParent(parentId: string) {
+    setDefaultParentId(parentId);
+    setModalOpen(true);
+  }
+
+  function openModalFresh() {
+    setDefaultParentId(undefined);
+    setModalOpen(true);
+  }
 
   return (
     <div className="flex gap-6 h-full">
       {/* Left: Account tree */}
-      <div className={cn("flex flex-col transition-all duration-300", selectedAccount ? "flex-1" : "w-full max-w-3xl mx-auto")}>
+      <div className={cn(
+        "flex flex-col transition-all duration-300",
+        selectedAccount ? "flex-1" : "w-full max-w-3xl mx-auto"
+      )}>
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -32,7 +46,7 @@ export default function AccountsPage() {
               Manage your knowledge and goal accounts
             </p>
           </div>
-          <Button onClick={() => setModalOpen(true)}>
+          <Button onClick={openModalFresh}>
             <Plus className="w-4 h-4 mr-2" />
             New account
           </Button>
@@ -58,13 +72,14 @@ export default function AccountsPage() {
                 depth={0}
                 selectedId={selectedAccount?.id ?? null}
                 onSelect={setSelectedAccount}
+                onAddChild={openModalWithParent}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Right: Detail panel (slide in) */}
+      {/* Right: Detail panel */}
       {selectedAccount && (
         <div className="w-80 shrink-0 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm self-start sticky top-0">
           <AccountDetailPanel
@@ -77,95 +92,8 @@ export default function AccountsPage() {
       <CreateAccountModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        defaultParentId={defaultParentId}
       />
-    </div>
-  );
-}
-
-function AccountTreeItem({
-  node,
-  depth,
-  selectedId,
-  onSelect,
-}: {
-  node: AccountTreeNode;
-  depth: number;
-  selectedId: string | null;
-  onSelect: (account: Account) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const hasChildren = node.children.length > 0;
-  const isSelected = node.id === selectedId;
-
-  return (
-    <div>
-      <div
-        className={cn(
-          "flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors",
-          isSelected
-            ? "bg-slate-100"
-            : "hover:bg-slate-50"
-        )}
-        style={{ paddingLeft: `${1 + depth * 1.5}rem` }}
-        onClick={() => onSelect(node)}
-      >
-        {/* Expand / collapse toggle */}
-        <button
-          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-          className="w-5 h-5 flex items-center justify-center text-slate-400 shrink-0"
-        >
-          {hasChildren ? (
-            expanded
-              ? <ChevronDown className="w-4 h-4" />
-              : <ChevronRight className="w-4 h-4" />
-          ) : (
-            <span className="w-4 h-4" />
-          )}
-        </button>
-
-        {/* Icon */}
-        {node.type === "knowledge" ? (
-          <BookOpen className="w-4 h-4 text-blue-500 shrink-0" />
-        ) : (
-          <Target className="w-4 h-4 text-emerald-500 shrink-0" />
-        )}
-
-        {/* Name */}
-        <span className="flex-1 text-sm font-medium text-slate-800">{node.name}</span>
-
-        {/* Effort score */}
-        <span className="text-xs text-slate-400 font-mono">
-          {node.totalEffortScore.toFixed(2)} pts
-        </span>
-
-        {/* Type badge */}
-        <Badge
-          variant="secondary"
-          className={cn(
-            "text-xs capitalize",
-            node.type === "knowledge"
-              ? "bg-blue-50 text-blue-600"
-              : "bg-emerald-50 text-emerald-600"
-          )}
-        >
-          {node.type}
-        </Badge>
-      </div>
-
-      {/* Children */}
-      {hasChildren && expanded && (
-        <div>
-          {node.children.map((child) => (
-            <AccountTreeItem
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

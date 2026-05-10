@@ -18,7 +18,6 @@ import {
   ChevronRight,
   Trash2,
 } from "lucide-react";
-import { getAffectedAccountIds } from "@/store/sessionStore";
 import {
   LineChart,
   Line,
@@ -35,13 +34,13 @@ interface Props {
 }
 
 export default function AccountDetailPanel({ account, onClose }: Props) {
-  const accounts = useAccountStore((s) => s.accounts);
-  const user = useAuthStore((s) => s.user);
+  const accounts      = useAccountStore((s) => s.accounts);
+  const user          = useAuthStore((s) => s.user);
   const deleteSession = useSessionStore((s) => s.deleteSession);
-  const [sessions, setSessions]   = useState<Session[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch recent sessions for this account
+  const [sessions,   setSessions]   = useState<Session[]>([]);
+  const [isLoading,  setIsLoading]  = useState(true);
+
   useEffect(() => {
     setIsLoading(true);
     fetchSessionsForAccount(account.id, 5)
@@ -51,29 +50,17 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
 
   async function handleDelete(session: Session) {
     if (!user) return;
-    const affectedIds = getAffectedAccountIds(accounts, account.id);
-    await deleteSession(user.uid, session, affectedIds);
-    // Remove the deleted session from the local list
-    setSessions(sessions.filter(s => s.id !== session.id));
+    // deleteSession handles affected account lookup internally
+    await deleteSession(user.uid, session.id);
+    setSessions((prev) => prev.filter((s) => s.id !== session.id));
   }
 
-  // Direct children of this account
-  const subAccounts = accounts.filter(
-    (a) => a.parentId === account.id && a.isActive
-  );
+  const subAccounts    = accounts.filter((a) => a.parentId === account.id && a.isActive);
+  const linkedAccounts = accounts.filter((a) => account.linkedAccountIds.includes(a.id));
 
-  // Linked accounts (for goals → knowledge, or knowledge → goals)
-  const linkedAccounts = accounts.filter((a) =>
-    account.linkedAccountIds.includes(a.id)
-  );
-
-  // Build mini chart data from the 5 recent sessions (oldest → newest)
   const chartData = [...sessions]
     .reverse()
-    .map((s, i) => ({
-      label: `S${i + 1}`,
-      score: s.effortScore,
-    }));
+    .map((s, i) => ({ label: `S${i + 1}`, score: s.effortScore }));
 
   const isKnowledge = account.type === "knowledge";
 
@@ -99,19 +86,14 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
               variant="secondary"
               className={cn(
                 "text-xs mt-1 capitalize",
-                isKnowledge
-                  ? "bg-blue-50 text-blue-600"
-                  : "bg-emerald-50 text-emerald-600"
+                isKnowledge ? "bg-blue-50 text-blue-600" : "bg-emerald-50 text-emerald-600"
               )}
             >
               {account.type}
             </Badge>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="text-slate-400 hover:text-slate-600 transition-colors"
-        >
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -140,21 +122,9 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
             <div className="h-[100px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 4, right: 4, left: -30, bottom: 0 }}>
-                  <XAxis
-                    dataKey="label"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                  />
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "6px",
-                      border: "none",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                      fontSize: "12px",
-                    }}
-                  />
+                  <Tooltip contentStyle={{ borderRadius: "6px", border: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", fontSize: "12px" }} />
                   <Line
                     type="monotone"
                     dataKey="score"
@@ -177,17 +147,12 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
             </p>
             <div className="space-y-2">
               {subAccounts.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg"
-                >
+                <div key={sub.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg">
                   <div className="flex items-center gap-2">
                     <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
                     <span className="text-sm text-slate-700">{sub.name}</span>
                   </div>
-                  <span className="text-xs font-mono text-slate-400">
-                    {sub.totalEffortScore.toFixed(2)} pts
-                  </span>
+                  <span className="text-xs font-mono text-slate-400">{sub.totalEffortScore.toFixed(2)} pts</span>
                 </div>
               ))}
             </div>
@@ -203,21 +168,14 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
             </p>
             <div className="space-y-2">
               {linkedAccounts.map((linked) => (
-                <div
-                  key={linked.id}
-                  className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg"
-                >
+                <div key={linked.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg">
                   <div className="flex items-center gap-2">
-                    {linked.type === "knowledge" ? (
-                      <BookOpen className="w-3.5 h-3.5 text-blue-400" />
-                    ) : (
-                      <Target className="w-3.5 h-3.5 text-emerald-400" />
-                    )}
+                    {linked.type === "knowledge"
+                      ? <BookOpen className="w-3.5 h-3.5 text-blue-400" />
+                      : <Target   className="w-3.5 h-3.5 text-emerald-400" />}
                     <span className="text-sm text-slate-700">{linked.name}</span>
                   </div>
-                  <span className="text-xs font-mono text-slate-400">
-                    {linked.totalEffortScore.toFixed(2)} pts
-                  </span>
+                  <span className="text-xs font-mono text-slate-400">{linked.totalEffortScore.toFixed(2)} pts</span>
                 </div>
               ))}
             </div>
@@ -237,20 +195,14 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
           ) : (
             <div className="space-y-2">
               {sessions.map((s) => {
-                const dateObj = s.date?.toDate ? s.date.toDate() : new Date();
-                const dateStr = new Intl.DateTimeFormat("en-US", {
-                  month: "short",
-                  day: "numeric",
-                }).format(dateObj);
-                const hrs  = Math.floor(s.duration / 60);
-                const mins = s.duration % 60;
+                const dateObj     = s.date?.toDate ? s.date.toDate() : new Date();
+                const dateStr     = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(dateObj);
+                const hrs         = Math.floor(s.duration / 60);
+                const mins        = s.duration % 60;
                 const durationStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
 
                 return (
-                  <div
-                    key={s.id}
-                    className="p-3 bg-white border border-slate-100 rounded-lg space-y-1.5 group relative"
-                  >
+                  <div key={s.id} className="p-3 bg-white border border-slate-100 rounded-lg space-y-1.5 group">
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">{dateStr}</span>
                       <div className="flex items-center gap-2">
@@ -274,9 +226,7 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
                       <span>Focus {s.focus}</span>
                     </div>
                     {s.notes && (
-                      <p className="text-xs text-slate-500 italic truncate">
-                        "{s.notes}"
-                      </p>
+                      <p className="text-xs text-slate-500 italic truncate">"{s.notes}"</p>
                     )}
                   </div>
                 );

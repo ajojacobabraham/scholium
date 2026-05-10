@@ -29,9 +29,11 @@ import { cn } from "@/lib/utils";
 export default function CreateAccountModal({
   open,
   onClose,
+  defaultParentId,
 }: {
   open: boolean;
   onClose: () => void;
+  defaultParentId?: string;
 }) {
   const user          = useAuthStore((s) => s.user);
   const accounts      = useAccountStore((s) => s.accounts);
@@ -48,10 +50,10 @@ export default function CreateAccountModal({
     if (open) {
       setName("");
       setType("knowledge");
-      setParentId("none");
+      setParentId(defaultParentId ?? "none");
       setLinkedAccountIds([]);
     }
-  }, [open]);
+  }, [open, defaultParentId]);
 
   // Parent accounts must be active and same type
   const availableParents = accounts.filter(

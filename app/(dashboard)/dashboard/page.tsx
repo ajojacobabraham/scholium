@@ -4,268 +4,187 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useLedgerStore } from "@/store/ledgerStore";
 import { useAccountStore } from "@/store/accountStore";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, Target, BookOpen, Zap, TrendingUp, Brain } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { fetchAllSessions } from "@/lib/firebase/ledger";
+import { fetchSessionsForAccount } from "@/lib/firebase/sessions";
 import type { Session } from "@/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from "recharts";
+import { Activity, Target, BookOpen, Zap, Brain, Flame } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const TIME_RANGES: { label: string; value: "7d" | "30d" | "3m" | "1y" | "all" }[] = [
-  { label: "7D", value: "7d" },
+type Range = "7d" | "30d" | "3m" | "1y" | "all";
+
+const RANGES: { label: string; value: Range }[] = [
+  { label: "7D",  value: "7d"  },
   { label: "30D", value: "30d" },
-  { label: "3M", value: "3m" },
-  { label: "1Y", value: "1y" },
+  { label: "3M",  value: "3m"  },
+  { label: "1Y",  value: "1y"  },
   { label: "All", value: "all" },
 ];
 
+function getStartDate(range: Range): Date | null {
+  const now = new Date();
+  if (range === "7d")  { const d = new Date(now); d.setDate(d.getDate() - 7);   return d; }
+  if (range === "30d") { const d = new Date(now); d.setDate(d.getDate() - 30);  return d; }
+  if (range === "3m")  { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d; }
+  if (range === "1y")  { const d = new Date(now); d.setFullYear(d.getFullYear() - 1); return d; }
+  return null;
+}
+
 export default function DashboardPage() {
-  const user = useAuthStore((s) => s.user);
-  const entries = useLedgerStore((s) => s.entries);
-  const fetchEntries = useLedgerStore((s) => s.fetchEntries);
-  const accounts = useAccountStore((s) => s.accounts);
-  const [timeRange, setTimeRange] = useState<"7d" | "30d" | "3m" | "1y" | "all">("7d");
+  const user          = useAuthStore((s) => s.user);
+  const entries       = useLedgerStore((s) => s.entries);
+  const fetchEntries  = useLedgerStore((s) => s.fetchEntries);
+  const accounts      = useAccountStore((s) => s.accounts);
+
+  const [range,    setRange]    = useState<Range>("7d");
   const [sessions, setSessions] = useState<Session[]>([]);
 
+  useEffect(() => { if (user) fetchEntries(user.uid); }, [user, fetchEntries]);
+
+  // Fetch sessions for avg focus/difficulty
   useEffect(() => {
-    if (!user) return;
-    fetchEntries(user.uid);
-    fetchAllSessions(user.uid).then(setSessions);
-  }, [user, fetchEntries]);
+    if (!user || accounts.length === 0) return;
+    Promise.all(
+      accounts.filter((a) => a.isActive).map((a) => fetchSessionsForAccount(a.id, 100))
+    ).then((results) => setSessions(results.flat()));
+  }, [user, accounts]);
 
-  // Date helpers
-  const rangeEnd = useMemo(() => new Date(), []);
-  const rangeStart = useMemo(() => {
-    const now = new Date();
-    if (timeRange === "7d") { const d = new Date(now); d.setDate(d.getDate() - 7); return d; }
-    if (timeRange === "30d") { const d = new Date(now); d.setDate(d.getDate() - 30); return d; }
-    if (timeRange === "3m") { const d = new Date(now); d.setMonth(d.getMonth() - 3); return d; }
-    if (timeRange === "1y") { const d = new Date(now); d.setFullYear(d.getFullYear() - 1); return d; }
-    return new Date(0);
-  }, [timeRange]);
-
-  const inRangeEntries = useMemo(() => {
+  // Filter entries by selected range
+  const filteredEntries = useMemo(() => {
+    const startDate = getStartDate(range);
+    if (!startDate) return entries;
     return entries.filter((e) => {
       const d = e.date?.toDate ? e.date.toDate() : new Date();
-      return d >= rangeStart && d <= rangeEnd;
+      return d >= startDate;
     });
-  }, [entries, rangeStart, rangeEnd]);
+  }, [entries, range]);
 
-  const inRangeSessions = useMemo(() => {
-    return sessions.filter((s) => {
-      const d = s.date?.toDate ? s.date.toDate() : new Date();
-      return d >= rangeStart && d <= rangeEnd;
-    });
-  }, [sessions, rangeStart, rangeEnd]);
-
-  // Top-level stats (all time)
+  // Summary stats (scoped to range)
   const stats = useMemo(() => {
-    const totalEffort = entries.reduce((sum, e) => sum + e.effortScore, 0);
-    const activeGoals = accounts.filter(a => a.type === "goal" && a.isActive).length;
-    const activeKnowledge = accounts.filter(a => a.type === "knowledge" && a.isActive).length;
-    return { totalEffort, totalSessions: entries.length, activeGoals, activeKnowledge };
-  }, [entries, accounts]);
+    const totalEffort   = filteredEntries.reduce((s, e) => s + e.effortScore, 0);
+    const totalSessions = filteredEntries.length;
+    const activeGoals   = accounts.filter((a) => a.type === "goal"      && a.isActive).length;
+    const activeKnow    = accounts.filter((a) => a.type === "knowledge" && a.isActive).length;
+    return { totalEffort, totalSessions, activeGoals, activeKnow };
+  }, [filteredEntries, accounts]);
 
-  // Average focus & difficulty (selected range)
-  const averages = useMemo(() => {
-    if (inRangeSessions.length === 0) return { avgFocus: 0, avgDifficulty: 0 };
-    const avgFocus = inRangeSessions.reduce((s, e) => s + e.focus, 0) / inRangeSessions.length;
-    const avgDifficulty = inRangeSessions.reduce((s, e) => s + e.difficulty, 0) / inRangeSessions.length;
-    return { avgFocus, avgDifficulty };
-  }, [inRangeSessions]);
+  // Avg focus & difficulty (all time — not range scoped, needs sessions)
+  const avgStats = useMemo(() => {
+    if (sessions.length === 0) return { focus: 0, difficulty: 0 };
+    const focus      = sessions.reduce((s, x) => s + x.focus,      0) / sessions.length;
+    const difficulty = sessions.reduce((s, x) => s + x.difficulty, 0) / sessions.length;
+    return { focus: focus.toFixed(2), difficulty: difficulty.toFixed(2) };
+  }, [sessions]);
 
-  // Chart data
+  // Chart: daily effort within range
   const chartData = useMemo(() => {
-    if (timeRange === "all") {
-      const monthly: Record<string, number> = {};
-      entries.forEach(entry => {
-        const d = entry.date?.toDate ? entry.date.toDate() : new Date();
-        const key = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-        monthly[key] = (monthly[key] || 0) + entry.effortScore;
-      });
-      return Object.entries(monthly).map(([date, score]) => ({ date, score: parseFloat(score.toFixed(2)) }));
+    const startDate = getStartDate(range);
+    const days      = range === "7d" ? 7 : range === "30d" ? 30 : range === "3m" ? 90 : range === "1y" ? 365 : null;
+
+    const dailyEffort: Record<string, number> = {};
+
+    if (days) {
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const key = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        dailyEffort[key] = 0;
+      }
     }
 
-    let totalDays = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "3m" ? 90 : 365;
-    const daysMap: Record<string, number> = {};
-    for (let i = totalDays - 1; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      daysMap[d.toISOString().slice(0, 10)] = 0;
-    }
-
-    entries.forEach(entry => {
-      const d = entry.date?.toDate ? entry.date.toDate() : new Date();
-      const key = d.toISOString().slice(0, 10);
-      if (daysMap[key] !== undefined) daysMap[key] += entry.effortScore;
+    filteredEntries.forEach((e) => {
+      const d   = e.date?.toDate ? e.date.toDate() : new Date();
+      const key = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      dailyEffort[key] = (dailyEffort[key] ?? 0) + e.effortScore;
     });
 
-const step = totalDays > 60 ? 14 : totalDays > 30 ? 7 : 1;
-const aggregated: Map<string, number> = new Map();
+    return Object.entries(dailyEffort).map(([date, score]) => ({
+      date,
+      score: parseFloat(score.toFixed(2)),
+    }));
+  }, [filteredEntries, range]);
 
-for (const [key, val] of Object.entries(daysMap)) {
-  // Extract the raw timestamp based on whether we are grouping or not
-  const bucketTs = step > 1 
-    ? Math.floor(Date.parse(key + "T00:00:00") / (86400000 * step)) * (86400000 * step) 
-    : Date.parse(key + "T00:00:00");
+  // Top 5 accounts by effort score (all time from account totals)
+  const topAccounts = useMemo(() => {
+    return [...accounts]
+      .filter((a) => a.isActive && a.totalEffortScore > 0)
+      .sort((a, b) => b.totalEffortScore - a.totalEffortScore)
+      .slice(0, 5);
+  }, [accounts]);
 
-  // Pass the raw timestamp directly into new Date()
-  const aggKey = new Date(bucketTs).toISOString().slice(0, 10);
-  aggregated.set(aggKey, (aggregated.get(aggKey) || 0) + val);
-}
-    const label = (key: string) => {
-      const d = new Date(key + "T00:00:00");
-      return totalDays > 90
-        ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-        : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
-
-    return Array.from(aggregated.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, score]) => ({ date: label(date), score: parseFloat(score.toFixed(2)) }));
-  }, [entries, timeRange]);
-
-  // Top accounts
-  const topAccounts = useMemo(() =>
-    [...accounts].filter(a => a.isActive).sort((a, b) => b.totalEffortScore - a.totalEffortScore).slice(0, 5)
-  , [accounts]);
+  const maxEffort = topAccounts[0]?.totalEffortScore ?? 1;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold text-slate-900">Analytics Overview</h2>
-        <p className="text-slate-500 mt-1">Track your momentum and ledger balances.</p>
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Header + range toggle */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
+          <p className="text-slate-500 text-sm mt-1">Your study momentum at a glance.</p>
+        </div>
+        <div className="flex gap-1.5">
+          {RANGES.map(({ label, value }) => (
+            <button
+              key={value}
+              onClick={() => setRange(value)}
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                range === value
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Total Effort</CardTitle>
-            <Activity className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">{stats.totalEffort.toFixed(2)}</div>
-            <p className="text-xs text-slate-500 mt-1">Lifetime points earned</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Study Sessions</CardTitle>
-            <Zap className="h-4 w-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">{stats.totalSessions}</div>
-            <p className="text-xs text-slate-500 mt-1">Total sessions logged</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Active Goals</CardTitle>
-            <Target className="h-4 w-4 text-emerald-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">{stats.activeGoals}</div>
-            <p className="text-xs text-slate-500 mt-1">Objectives in progress</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Knowledge Topics</CardTitle>
-            <BookOpen className="h-4 w-4 text-indigo-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">{stats.activeKnowledge}</div>
-            <p className="text-xs text-slate-500 mt-1">Subjects being tracked</p>
-          </CardContent>
-        </Card>
+      {/* Summary cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <StatCard title="Total Effort"       value={stats.totalEffort.toFixed(2)} sub="Points earned"         icon={Activity} color="text-blue-600"    />
+        <StatCard title="Study Sessions"     value={stats.totalSessions}          sub="Sessions logged"       icon={Zap}      color="text-amber-500"   />
+        <StatCard title="Active Goals"       value={stats.activeGoals}            sub="Objectives in progress"icon={Target}   color="text-emerald-600" />
+        <StatCard title="Knowledge Topics"   value={stats.activeKnow}             sub="Subjects tracked"      icon={BookOpen} color="text-indigo-600"  />
+        <StatCard title="Avg Focus"          value={avgStats.focus}               sub="Out of 5 (all time)"   icon={Brain}    color="text-violet-500"  />
+        <StatCard title="Avg Difficulty"     value={avgStats.difficulty}          sub="Out of 5 (all time)"   icon={Flame}    color="text-rose-500"    />
       </div>
 
-      {/* Additional stat cards */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Avg Focus</CardTitle>
-            <Brain className="h-4 w-4 text-violet-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">
-              {averages.avgFocus > 0 ? averages.avgFocus.toFixed(1) : "—"}
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {timeRange === "7d" ? "Last 7 days focus" : inRangeSessions.length > 0 ? `Across ${inRangeSessions.length} sessions` : "No sessions in range"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-slate-600">Avg Difficulty</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-900">
-              {averages.avgDifficulty > 0 ? averages.avgDifficulty.toFixed(1) : "—"}
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {timeRange === "7d" ? "Last 7 days difficulty" : inRangeSessions.length > 0 ? `Across ${inRangeSessions.length} sessions` : "No sessions in range"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Effort Velocity Chart */}
-      <Card className="bg-white border-slate-200 shadow-sm col-span-4">
+      {/* Effort over time chart */}
+      <Card className="bg-white border-slate-200 shadow-sm">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg text-slate-800">
-              Effort Velocity ({timeRange === "all" ? "All Time" : timeRange === "1y" ? "Past Year" : timeRange === "3m" ? "Past 3 Months" : `Last ${timeRange.replace("d", " days")}`})
-            </CardTitle>
-            <div className="flex items-center gap-1">
-              {TIME_RANGES.map(({ label, value }) => (
-                <button
-                  key={value}
-                  onClick={() => setTimeRange(value)}
-                  className={cn(
-                    "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
-                    timeRange === value
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <CardTitle className="text-base text-slate-800">Effort Over Time</CardTitle>
         </CardHeader>
         <CardContent className="pl-0">
-          <div className="h-[300px] w-full mt-4">
+          <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 5, right: 24, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis
                   dataKey="date"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#64748b', fontSize: 12 }}
-                  dy={10}
+                  axisLine={false} tickLine={false}
+                  tick={{ fill: "#64748b", fontSize: 11 }}
+                  dy={8}
                   interval="preserveStartEnd"
                 />
                 <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#64748b', fontSize: 12 }}
-                  dx={-10}
+                  axisLine={false} tickLine={false}
+                  tick={{ fill: "#64748b", fontSize: 11 }}
+                  dx={-4}
                 />
                 <Tooltip
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", fontSize: "12px" }}
                 />
                 <Line
                   type="monotone"
                   dataKey="score"
                   stroke="#2563eb"
-                  strokeWidth={3}
-                  dot={{ r: 4, strokeWidth: 2 }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 0 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -273,43 +192,56 @@ for (const [key, val] of Object.entries(daysMap)) {
         </CardContent>
       </Card>
 
-      {/* Top Accounts */}
+      {/* Top accounts */}
       {topAccounts.length > 0 && (
         <Card className="bg-white border-slate-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-800">Top Accounts</CardTitle>
+            <CardTitle className="text-base text-slate-800">Top Accounts</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {topAccounts.map((acc, i) => {
-                const maxScore = topAccounts[0]?.totalEffortScore ?? 1;
-                const pct = (acc.totalEffortScore / maxScore) * 100;
-                return (
-                  <div key={acc.id}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400 w-4">{i + 1}</span>
-                        <span className="text-sm font-medium text-slate-700 truncate max-w-[200px]">
-                          {acc.type === "knowledge" ? "📚" : "🎯"} {acc.name}
-                        </span>
-                      </div>
-                      <span className="text-sm font-mono text-slate-600">
-                        {acc.totalEffortScore.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="h-1.5 bg-slate-100 rounded-full ml-6 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-blue-500 transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <CardContent className="space-y-3">
+            {topAccounts.map((acc) => (
+              <div key={acc.id} className="flex items-center gap-3">
+                <span className="text-sm w-32 truncate text-slate-700 shrink-0">{acc.name}</span>
+                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      acc.type === "knowledge" ? "bg-blue-500" : "bg-emerald-500"
+                    )}
+                    style={{ width: `${(acc.totalEffortScore / maxEffort) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs font-mono text-slate-500 w-16 text-right shrink-0">
+                  {acc.totalEffortScore.toFixed(2)} pts
+                </span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
     </div>
+  );
+}
+
+function StatCard({
+  title, value, sub, icon: Icon, color,
+}: {
+  title: string;
+  value: string | number;
+  sub: string;
+  icon: React.ElementType;
+  color: string;
+}) {
+  return (
+    <Card className="bg-white border-slate-200 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium text-slate-600">{title}</CardTitle>
+        <Icon className={cn("h-4 w-4", color)} />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold text-slate-900">{value}</div>
+        <p className="text-xs text-slate-500 mt-1">{sub}</p>
+      </CardContent>
+    </Card>
   );
 }
