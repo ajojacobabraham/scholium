@@ -99,14 +99,19 @@ export default function DashboardPage() {
       if (daysMap[key] !== undefined) daysMap[key] += entry.effortScore;
     });
 
-    const step = totalDays > 60 ? 14 : totalDays > 30 ? 7 : 1;
-    const aggregated: Map<string, number> = new Map();
-    for (const [key, val] of Object.entries(daysMap)) {
-      const bucket = step > 1 ? Math.floor(Date.parse(key + "T00:00:00") / (86400000 * step)) : Date.parse(key + "T00:00:00");
-      const aggKey = new Date(bucket * 86400000).toISOString().slice(0, 10);
-      aggregated.set(aggKey, (aggregated.get(aggKey) || 0) + val);
-    }
+const step = totalDays > 60 ? 14 : totalDays > 30 ? 7 : 1;
+const aggregated: Map<string, number> = new Map();
 
+for (const [key, val] of Object.entries(daysMap)) {
+  // Extract the raw timestamp based on whether we are grouping or not
+  const bucketTs = step > 1 
+    ? Math.floor(Date.parse(key + "T00:00:00") / (86400000 * step)) * (86400000 * step) 
+    : Date.parse(key + "T00:00:00");
+
+  // Pass the raw timestamp directly into new Date()
+  const aggKey = new Date(bucketTs).toISOString().slice(0, 10);
+  aggregated.set(aggKey, (aggregated.get(aggKey) || 0) + val);
+}
     const label = (key: string) => {
       const d = new Date(key + "T00:00:00");
       return totalDays > 90
