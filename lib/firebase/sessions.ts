@@ -79,3 +79,46 @@ export async function fetchSessionsForAccount(
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Session));
 }
+
+// Delete a session by creating a reversal ledger entry and negating all affected totals
+export async function deleteSessionWithReversal(
+  sessionId: string,
+  userId: string,
+  affectedAccountIds: string[],
+  reversalData: {
+    date: Date;
+    durationHours: number;
+    effortRemainder: number;
+    effortScore: number;
+    notes: string;
+  }
+) {
+  const batch = writeBatch(db);
+
+  // Mark the session as deleted by updating notes to indicate reversal
+  const sessionRef = doc(db, "sessions", sessionId);
+  batch.update(sessionRef, { notes: reversalData.notes });
+
+  // Create a negative reversal ledger entry
+  const ledgerRef = doc(collection(db, "ledgerEntries"));
+  batch.set(ledgerRef, {
+    userId,
+    sessionId,
+    date: reversalData.date,
+    debitTimeAccount: "effort",
+    debitEffortAccount: "time",
+    creditAccountId: reversalData.notes,
+    durationHours: -reversalData.durationHours,
+    effortRemainder: -reversalData.effortRemainder,
+    effortScore: -reversalData.effortScore,
+    notes: `(Reversal) ${reversalData.notes}`,
+  });
+
+  // Deduct from all affected accounts
+  affectedAccountIds.forEach((id) => {
+    const accRef = doc(db, "accounts", id);
+    batch.update(accRef, { totalEffortScore: increment(-reversalData.effortScore) });
+  });
+
+  await batch.commit();
+}

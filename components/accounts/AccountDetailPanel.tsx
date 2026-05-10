@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAccountStore } from "@/store/accountStore";
+import { useAuthStore } from "@/store/authStore";
+import { useSessionStore } from "@/store/sessionStore";
 import { fetchSessionsForAccount } from "@/lib/firebase/sessions";
 import type { Account, Session } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +16,9 @@ import {
   TrendingUp,
   Link2,
   ChevronRight,
+  Trash2,
 } from "lucide-react";
+import { getAffectedAccountIds } from "@/store/sessionStore";
 import {
   LineChart,
   Line,
@@ -32,6 +36,8 @@ interface Props {
 
 export default function AccountDetailPanel({ account, onClose }: Props) {
   const accounts = useAccountStore((s) => s.accounts);
+  const user = useAuthStore((s) => s.user);
+  const deleteSession = useSessionStore((s) => s.deleteSession);
   const [sessions, setSessions]   = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -42,6 +48,14 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
       .then(setSessions)
       .finally(() => setIsLoading(false));
   }, [account.id]);
+
+  async function handleDelete(session: Session) {
+    if (!user) return;
+    const affectedIds = getAffectedAccountIds(accounts, account.id);
+    await deleteSession(user.uid, session, affectedIds);
+    // Remove the deleted session from the local list
+    setSessions(sessions.filter(s => s.id !== session.id));
+  }
 
   // Direct children of this account
   const subAccounts = accounts.filter(
@@ -235,13 +249,22 @@ export default function AccountDetailPanel({ account, onClose }: Props) {
                 return (
                   <div
                     key={s.id}
-                    className="p-3 bg-white border border-slate-100 rounded-lg space-y-1.5"
+                    className="p-3 bg-white border border-slate-100 rounded-lg space-y-1.5 group relative"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">{dateStr}</span>
-                      <span className="text-xs font-mono font-medium text-slate-700">
-                        {s.effortScore.toFixed(2)} pts
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-medium text-slate-700">
+                          {s.effortScore.toFixed(2)} pts
+                        </span>
+                        <button
+                          onClick={() => handleDelete(s)}
+                          className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-colors"
+                          title="Reverse this session"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-slate-400">
                       <span>{durationStr}</span>

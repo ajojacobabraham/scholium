@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useAccountStore } from "@/store/accountStore";
 import { useSessionStore } from "@/store/sessionStore";
@@ -18,23 +17,40 @@ import {
 } from "@/components/ui/select";
 import RatingSelector from "@/components/sessions/RatingSelector";
 import EffortPreview from "@/components/sessions/EffortPreview";
+import { checkCircle, BookOpen, Clock, Zap, BarChart3, ArrowLeft } from "lucide-react";
+
+function calculateEffort(hours: number, minutes: number, difficulty: number, focus: number) {
+  const totalMinutes = hours * 60 + minutes;
+  return parseFloat(((totalMinutes / 60) * difficulty * focus).toFixed(2));
+}
 
 export default function NewSessionPage() {
-  const router     = useRouter();
-  const user       = useAuthStore((s) => s.user);
-  const accounts   = useAccountStore((s) => s.accounts).filter((a) => a.isActive);
+  const user = useAuthStore((s) => s.user);
+  const accounts = useAccountStore((s) => s.accounts).filter((a) => a.isActive);
   const logSession = useSessionStore((s) => s.logSession);
-  const isLoading  = useSessionStore((s) => s.isLoading);
+  const isLoading = useSessionStore((s) => s.isLoading);
 
-  const [accountId,       setAccountId]       = useState("");
-  const [durationHours,   setDurationHours]   = useState<number>(0);
+  const [accountId, setAccountId] = useState("");
+  const [durationHours, setDurationHours] = useState<number>(0);
   const [durationMinutes, setDurationMinutes] = useState<number>(0);
-  const [difficulty,      setDifficulty]      = useState<number>(3);
-  const [focus,           setFocus]           = useState<number>(3);
-  const [notes,           setNotes]           = useState("");
+  const [difficulty, setDifficulty] = useState<number>(3);
+  const [focus, setFocus] = useState<number>(3);
+  const [notes, setNotes] = useState("");
+
+  const [lastSession, setLastSession] = useState<{
+    accountName: string;
+    accountType: string;
+    durationHours: number;
+    durationMinutes: number;
+    difficulty: number;
+    focus: number;
+    effortScore: number;
+    notes: string;
+    updatedBalance: string;
+  } | null>(null);
 
   const canSubmit =
-    !!accountId && (durationHours > 0 || durationMinutes > 0) && !isLoading;
+    !!accountId && (durationHours > 0 || durationMinutes > 0) && !isLoading && !lastSession;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,10 +65,119 @@ export default function NewSessionPage() {
         focus,
         notes,
       });
-      router.push("/accounts");
+
+      const effortScore = calculateEffort(durationHours, durationMinutes, difficulty, focus);
+      const account = accounts.find((a) => a.id === accountId);
+      const updatedBalance = account ? (account.totalEffortScore + effortScore).toFixed(2) : "0.00";
+
+      setLastSession({
+        accountName: account?.name ?? "Unknown",
+        accountType: account?.type ?? "knowledge",
+        durationHours,
+        durationMinutes,
+        difficulty,
+        focus,
+        effortScore,
+        notes,
+        updatedBalance,
+      });
     } catch (err) {
       console.error(err);
     }
+  }
+
+  function resetForm() {
+    setAccountId("");
+    setDurationHours(0);
+    setDurationMinutes(0);
+    setDifficulty(3);
+    setFocus(3);
+    setNotes("");
+    setLastSession(null);
+  }
+
+  function goHome() {
+    window.location.href = "/dashboard";
+  }
+
+  if (lastSession) {
+    return (
+      <div className="max-w-lg mx-auto space-y-8">
+        <div className="text-center space-y-4">
+          <checkCircle className="w-16 h-16 text-emerald-500 mx-auto" />
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Session Logged!</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Posted to the ledger successfully.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+            <BookOpen className="w-5 h-5 text-slate-400" />
+            <div>
+              <p className="text-sm text-slate-400">Account</p>
+              <p className="font-semibold text-slate-900">{lastSession.accountName}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+            <Clock className="w-5 h-5 text-slate-400" />
+            <div>
+              <p className="text-sm text-slate-400">Duration</p>
+              <p className="font-semibold text-slate-900">
+                {lastSession.durationHours > 0 && `${lastSession.durationHours}h `}
+                {lastSession.durationMinutes}m
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+            <Zap className="w-5 h-5 text-slate-400" />
+            <div>
+              <p className="text-sm text-slate-400">Effort Score</p>
+              <p className="text-2xl font-bold font-mono text-slate-900">
+                {lastSession.effortScore.toFixed(2)} pts
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+            <BarChart3 className="w-5 h-5 text-slate-400" />
+            <div>
+              <p className="text-sm text-slate-400">Difficulty / Focus</p>
+              <p className="font-semibold text-slate-900">
+                {lastSession.difficulty} / {lastSession.focus}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-lg p-4">
+            <p className="text-xs text-slate-500 mb-1">Account Balance</p>
+            <p className="text-xl font-bold font-mono text-slate-900">
+              {lastSession.updatedBalance} pts
+            </p>
+          </div>
+
+          {lastSession.notes && (
+            <p className="text-sm text-slate-500 italic border-l-2 border-slate-200 pl-3">
+              "{lastSession.notes}"
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={goHome} className="flex-1">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Dashboard
+          </Button>
+          <Button onClick={resetForm} className="flex-1">
+            Log Another
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -148,7 +273,7 @@ export default function NewSessionPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={!canSubmit}>
-            {isLoading ? "Posting to ledger..." : "Log Session"}
+            {isLoading ? "Posting to Ledger..." : "Log Session"}
           </Button>
         </form>
 

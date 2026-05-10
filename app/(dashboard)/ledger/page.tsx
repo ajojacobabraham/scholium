@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Search, X } from "lucide-react";
+import { Search, X, ChevronLeft, ChevronRight } from "lucide-react";
 import TrialBalanceSummary from "@/components/ledger/TrialBalanceSummary";
 import type { LedgerEntry } from "@/types";
 import { cn } from "@/lib/utils";
@@ -65,6 +65,8 @@ export default function LedgerPage() {
   const [accountId,  setAccountId]  = useState<string>("all");
   const [entryType,  setEntryType]  = useState<string>("all"); // "all" | "knowledge" | "goal"
   const [search,     setSearch]     = useState("");
+  const [page,       setPage]       = useState(1);
+  const PAGE_SIZE = 20; // 20 sessions = 60 ledger rows per page
 
   useEffect(() => {
     if (user) fetchEntries(user.uid);
@@ -99,6 +101,13 @@ export default function LedgerPage() {
       return true;
     });
   }, [entries, dateRange, accountId, entryType, search, accounts]);
+
+  // Reset page when filters change
+  useEffect(() => setPage(1), [dateRange, accountId, entryType, search]);
+
+  // ── Paginated entries ───────────────────────────────────────────────────────
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function getAccountName(id: string) {
@@ -244,7 +253,7 @@ export default function LedgerPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((entry) => {
+              paginated.map((entry) => {
                 const dateObj = entry.date?.toDate ? entry.date.toDate() : new Date();
                 const dateStr = new Intl.DateTimeFormat("en-US", {
                   month: "short",
@@ -311,6 +320,30 @@ export default function LedgerPage() {
             )}
           </TableBody>
         </Table>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
+            <p className="text-xs text-slate-500">
+              Page {page} of {totalPages} ({filtered.length} entries total)
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Prev
+              </button>
+              <button
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
